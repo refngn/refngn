@@ -381,6 +381,13 @@ refngn config test --domain example.com
 
 A successful result includes checks such as TOML syntax, HTTP engine, TLS configuration, backend reachability, and conflicting rules.
 
+## Test commands
+
+```bash
+refngn test
+```
+
+
 ### Doctor
 
 ```bash
