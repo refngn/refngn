@@ -1,5 +1,7 @@
 # Refined Engine (`refngn`) 0.4.6-beta.4
 
+### NOT YET RELEASED, WORK IN Development!
+
 Refined Engine is a Linux reverse proxy and HTTP/HTTPS server written in Rust. It focuses on explicit configuration, predictable routing, TLS through rustls, diagnostics, and an experimental custom HTTP request-head parser named `refngn-parser`.
 
 For the complete installation, configuration, CLI, troubleshooting, and operational reference, read [`manual.md`](manual.md).
