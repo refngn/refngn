@@ -1,0 +1,46 @@
+sites_active = "/etc/refngn/config/sites-active"
+
+[[listen.v4]]
+address = "0.0.0.0"  # Change to your needs -> 0.0.0.0 not advised
+port = 80
+tls = false
+redirect_to_https = false
+
+[[listen.v6]]
+address = "::"  # Change to your needs -> wildcard not advised
+port = 80
+tls = false
+redirect_to_https = false
+
+[[listen.v4]]
+address = "0.0.0.0"   # Change to your needs -> 0.0.0.0 not advised
+port = 443
+tls = true
+
+[[listen.v6]]
+address = "::"    # Change to your needs -> wildcard not advised
+port = 443
+tls = true
+
+[server]
+max_connections = 2048
+graceful_shutdown_seconds = 30
+header_timeout_seconds = 10
+idle_timeout_seconds = 75
+max_header_bytes = 32768
+max_headers = 100
+max_uri_bytes = 8192
+request_body_bytes = 67108864
+
+[logging]
+level = "info"
+access_log = "/var/log/refngn/access.log"
+error_log = "/var/log/refngn/error.log"
+format = "json"
+
+[tls]
+handshake_timeout_seconds = 10
+
+[security]
+enabled = true
+config = "/etc/refngn/config/security.toml"
