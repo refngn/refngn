@@ -1,7 +1,3 @@
-
-## 1. Layer 3 Project Tree
-
-```bash
 /etc/refngn
 ├── Cargo.lock
 ├── Cargo.toml
@@ -16,6 +12,7 @@
 │   ├── refngn-local-tls.toml
 │   ├── refngn-tls.example.toml
 │   ├── refngn.toml
+│   ├── security.toml
 │   └── sites-active
 │       ├── default.toml
 │       ├── dualstack.example.toml.example
@@ -36,6 +33,7 @@
 │   └── tmpfiles.d
 │       └── refngn.conf
 ├── README.md
+├── RELEASE_NOTES_0.4.7_PRE_ALPHA.md
 ├── src
 │   ├── certificates.rs
 │   ├── config.rs
@@ -44,6 +42,7 @@
 │   ├── main.rs
 │   ├── refngn_parser
 │   │   └── mod.rs
+│   ├── security.rs
 │   └── server.rs
 ├── target
 │   ├── CACHEDIR.TAG
@@ -58,4 +57,4 @@
 └── www
     └── index.html
 
-```
+20 directories, 38 files
