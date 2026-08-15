@@ -1,0 +1,156 @@
+# Refined Engine / refngn
+# Example site configuration
+# Version: 0.4.7 Pre Alpha
+
+[site]
+name = "example.com"
+server_names = ["example.com", "www.example.com"]
+
+
+# TLS / SNI
+
+[site.tls]
+enabled = true
+default = false
+certificate = "/etc/refngn/config/certs/example.com-fullchain.pem"
+private_key = "/etc/refngn/config/private/example.com.key"
+
+
+# Redirect HTTP to HTTPS.
+# target_domain may optionally be used for a canonical-domain redirect.
+
+[site.redirect]
+http_to_https = true
+https_port = 443
+
+# target_domain = "www.example.com"
+
+
+# Security profile.
+# The profile itself is defined in the central security.toml.
+
+[site.security]
+enabled = true
+profile = "default"
+
+
+# Request limits.
+
+[site.limits]
+max_header_bytes = 32768
+max_headers = 100
+max_uri_bytes = 8192
+request_body_bytes = 16777216
+header_timeout_seconds = 10
+body_timeout_seconds = 60
+idle_timeout_seconds = 75
+
+
+# HTTP parser modes:
+#   hyper         = stable/default
+#   hyper-custom  = Hyper + experimental refngn-parser validation
+#   custom        = experimental custom validation
+
+[site.parser]
+mode = "hyper"
+
+
+# Request IDs.
+
+[site.request_id]
+enabled = true
+header = "x-request-id"
+trust_incoming = false
+
+
+# Security / response headers.
+
+[site.headers]
+strict_transport_security = "max-age=31536000; includeSubDomains"
+x_content_type_options = "nosniff"
+x_frame_options = "SAMEORIGIN"
+referrer_policy = "strict-origin-when-cross-origin"
+content_security_policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https://www.googletagmanager.com; connect-src 'self' https://*.google-analytics.com https://*.analytics.google.com; img-src 'self' data: https://*.google-analytics.com https://www.googletagmanager.com;"
+
+[site.headers.set]
+permissions-policy = "camera=(), microphone=()"
+
+
+# Reverse proxy.
+# Route-level settings must be defined before
+# [[site.proxy.multi.upstream]].
+
+[[site.proxy]]
+path_prefix = "/"
+strip_prefix = false
+
+timeout_seconds = 30
+connect_timeout_seconds = 5
+response_header_timeout_seconds = 30
+idle_timeout_seconds = 75
+
+max_request_body_bytes = 16777216
+max_response_body_bytes = 268435456
+
+streaming = true
+websocket = true
+
+
+# Multiple structured upstreams.
+# IPv6 addresses are written without square brackets.
+
+[[site.proxy.multi.upstream]]
+protocol = "http"
+address = "127.0.0.1"
+port = 8090
+
+[[site.proxy.multi.upstream]]
+protocol = "http"
+address = "::1"
+port = 8090
+
+
+# Backend health checking.
+
+[site.proxy.health_check]
+enabled = true
+path = "/health"
+timeout_seconds = 2
+
+
+# Safe retries.
+# Automatic retries are deliberately conservative.
+
+[site.proxy.retry]
+attempts = 2
+retry_connect_errors = true
+
+
+# Proxy headers.
+
+[site.proxy.headers]
+host = "$host"
+x_real_ip = "$remote_addr"
+x_forwarded_for = "$proxy_add_x_forwarded_for"
+x_forwarded_host = "$host"
+x_forwarded_proto = "$scheme"
+
+
+# Notes:
+#
+# A single backend may be configured instead with:
+#
+#   upstream = "http://127.0.0.1:8090"
+#
+# The legacy multi-backend form is also supported:
+#
+#   upstreams = [
+#       "http://127.0.0.1:8090",
+#       "http://[::1]:8090",
+#   ]
+#
+# Do not combine upstream, upstreams and
+# [[site.proxy.multi.upstream]] on the same route.
+#
+# refngn-parser and the security engine are still experimental
+# in 0.4.7 Pre Alpha.
