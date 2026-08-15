@@ -1,12 +1,12 @@
-# Refined Engine 0.4.6-beta.4 — Manual
+# Refined Engine 0.4.7 Pre Alpha — Manual
 
 ## 1. Overview
 
 Refined Engine (`refngn`) is a Linux-first HTTP/HTTPS server and reverse proxy written in Rust. The project provides explicit listeners, per-site routing, SNI TLS, redirects, static files, reverse proxying, diagnostics, request limits, and an experimental request-head parser called `refngn-parser`.
 
-This beta introduces explicit IPv4/IPv6 listener families and bracket-free structured multi-upstreams.
+This Pre Alpha retains explicit IPv4/IPv6 listener families and bracket-free structured multi-upstreams and introduces the first Refngn security engine.
 
-## 2. Important beta notes
+## 2. Important Pre Alpha notes
 
 - `refngn-parser` is experimental. Hyper remains the stable default.
 - `hyper-custom` runs additional custom validation and may reject requests when the parsers disagree.
@@ -78,7 +78,7 @@ sudo -u refngn test -r /etc/refngn/config/private/example.com.key && echo OK
 
 ### 5.1 IPv4 and IPv6 listeners
 
-The preferred 0.4.6-beta.4 syntax separates the address families explicitly:
+The preferred listener syntax separates the address families explicitly:
 
 ```toml
 sites_active = "/etc/refngn/config/sites-active"
@@ -155,6 +155,18 @@ handshake_timeout_seconds = 10
 ```
 
 Certificates themselves are configured per site.
+
+### 5.5 Central security configuration
+
+Security is optional and loaded from a separate file:
+
+```toml
+[security]
+enabled = true
+config = "/etc/refngn/config/security.toml"
+```
+
+If security is enabled, the file must exist and contain the configured default profile. If a site enables security while global security is disabled, configuration validation fails.
 
 ## 6. Site configuration
 
@@ -347,7 +359,55 @@ trust_incoming = false
 
 When incoming IDs are not trusted, Refngn generates a new request ID and forwards it to the backend.
 
-## 15. HTTP parser modes
+## 15. Security engine (Pre Alpha)
+
+Attach a central security profile to a site:
+
+```toml
+[site.security]
+enabled = true
+profile = "default"
+```
+
+Example `/etc/refngn/config/security.toml`:
+
+```toml
+[security]
+default_profile = "default"
+
+[security.connections]
+max_per_ip = 50
+
+[security.profile.default.rate_limit]
+enabled = true
+requests = 120
+window_seconds = 60
+burst = 30
+
+[security.profile.default.blocking]
+enabled = true
+violation_threshold = 10
+window_seconds = 60
+ban_seconds = 900
+
+[security.profile.default.bruteforce]
+enabled = true
+failure_statuses = [401, 403]
+attempts = 5
+window_seconds = 300
+initial_block_seconds = 30
+max_block_seconds = 3600
+```
+
+The rate limiter is currently a fixed-window per-IP/per-profile limiter. `burst` increases the allowed count within a window. Exceeding the rate limit returns HTTP 429 with `Retry-After`. Repeated rate-limit violations may create a temporary IP ban when blocking is enabled.
+
+Brute-force protection observes response status codes. After the configured number of failures within the window, the direct peer IP is temporarily blocked. Repeated blocks increase the penalty up to `max_block_seconds`. Refngn does not inspect credentials or authentication request bodies.
+
+`security.connections.max_per_ip` limits concurrent TCP connections per direct peer IP. Security counters and bans are in memory and reset when Refngn restarts or reloads into a new process.
+
+**Important:** this security layer is intended for HTTP/application-layer abuse. It cannot prevent volumetric DDoS traffic from saturating the machine or upstream network. When Refngn is placed behind a CDN or another reverse proxy, direct-peer IP limiting will see that proxy's IP in this Pre Alpha; trusted-proxy-aware client-IP handling is planned for a later build.
+
+## 16. HTTP parser modes
 
 ```toml
 [site.parser]
@@ -362,7 +422,7 @@ Modes:
 
 Diagnostics intentionally warn for experimental modes.
 
-## 16. CLI reference
+## 17. CLI reference
 
 ### General
 
@@ -377,16 +437,10 @@ refngn run
 ```bash
 refngn config test
 refngn config test --domain example.com
-```
-
-A successful result includes checks such as TOML syntax, HTTP engine, TLS configuration, backend reachability, and conflicting rules.
-
-## Test commands
-
-```bash
 refngn test
 ```
 
+`refngn config test` is the preferred validation command. `refngn test` is the backward-compatible alias. Run one of these before restart/reload; use `--domain` when you want backend/network checks focused on one configured site. A successful result includes checks such as TOML syntax, HTTP engine, TLS configuration, security profile references, backend reachability, and conflicting rules.
 
 ### Doctor
 
@@ -431,7 +485,7 @@ sudo refngn reload
 sudo systemctl reload refngn
 ```
 
-## 17. Testing IPv4 and IPv6
+## 18. Testing IPv4 and IPv6
 
 Frontend listeners:
 
@@ -451,11 +505,11 @@ curl -g -v 'http://[::1]:8090/'
 
 A structured multi-upstream can only be healthy on IPv6 if the backend application itself listens on IPv6.
 
-## 18. Troubleshooting
+## 19. Troubleshooting
 
 ### Address already in use on `[::]:80`
 
-0.4.6-beta.4 opens `listen.v6` sockets with `IPV6_V6ONLY`. With the new listener syntax, `0.0.0.0:80` and `[::]:80` are expected to coexist.
+0.4.7 Pre Alpha opens `listen.v6` sockets with `IPV6_V6ONLY`. With the new listener syntax, `0.0.0.0:80` and `[::]:80` are expected to coexist.
 
 Check:
 
@@ -490,7 +544,7 @@ sudo journalctl -u refngn -n 100 --no-pager
 readlink -f /usr/bin/refngn
 ```
 
-## 19. Upgrade notes for 0.4.6-beta.4
+## 20. Upgrade notes for 0.4.7 Pre Alpha
 
 The main listener syntax changed from flat blocks:
 
@@ -525,11 +579,16 @@ port = 8090
 
 The single URL form remains supported.
 
-## 20. Operational guidance
+Security is opt-in. Existing sites continue to run without `[site.security]`. To enable the Pre Alpha security engine, add `[security]` to the main config, install `security.toml`, and attach a profile to the desired sites.
+
+## 21. Operational guidance
 
 - Always run `refngn config test` before restarting the service.
 - Run `refngn doctor --domain <name>` when introducing a new site or backend.
 - Keep private keys readable only by the service group.
 - Test both `curl -4` and `curl -6` for dual-stack deployments.
 - Treat beta parser modes as experimental until tested against your traffic.
+- Start security profiles with generous limits, observe legitimate traffic, then tighten them.
+- Remember that security counters/bans reset across restart/reload in this Pre Alpha.
+- Keep upstream/provider DDoS protection for attacks that can saturate your network link.
 - Do not expose backend application ports publicly unless required.
