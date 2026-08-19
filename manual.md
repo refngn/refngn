@@ -1,18 +1,19 @@
-# Refined Engine 0.4.7 Pre Alpha — Manual
+# Refined Engine 0.4.7 Unstable — Manual
 
 ## 1. Overview
 
 Refined Engine (`refngn`) is a Linux-first HTTP/HTTPS server and reverse proxy written in Rust. The project provides explicit listeners, per-site routing, SNI TLS, redirects, static files, reverse proxying, diagnostics, request limits, and an experimental request-head parser called `refngn-parser`.
 
-This Pre Alpha retains explicit IPv4/IPv6 listener families and bracket-free structured multi-upstreams and introduces the first Refngn security engine.
+This Alpha adds HTTP/2, configurable TLS protocol versions, route-specific security profiles, stronger Hyper/refngn-parser differential validation, and experimental feature-gated HTTP/3/QUIC groundwork while retaining the dual-stack and multi-upstream model.
 
-## 2. Important Pre Alpha notes
+## 2. Important Alpha notes
 
-- `refngn-parser` is experimental. Hyper remains the stable default.
+- HTTP/2 is enabled by default through Hyper; `refngn-parser` remains experimental.
 - `hyper-custom` runs additional custom validation and may reject requests when the parsers disagree.
 - `custom` is an experimental mode and should be tested before production deployment.
 - Incoming proxy request bodies are still collected within configured limits; upstream response streaming is supported.
 - Health checks are currently performed during routing attempts rather than by a persistent background health worker.
+- HTTP/3 is feature-gated and does not yet use the normal static/proxy routing path; see Known Limitations.
 - Reload is still a graceful generation recycle rather than a fully in-process socket-preserving configuration swap.
 
 See [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md).
@@ -38,6 +39,7 @@ Install:
 ```bash
 sudo systemctl stop refngn
 sudo install -Dm755 target/release/refngn /usr/bin/refngn
+/usr/bin/refngn --version
 sudo install -Dm644 packaging/systemd/refngn.service /etc/systemd/system/refngn.service
 sudo install -Dm644 packaging/logrotate.d/refngn /etc/logrotate.d/refngn
 sudo install -Dm644 packaging/tmpfiles.d/refngn.conf /usr/lib/tmpfiles.d/refngn.conf
@@ -152,11 +154,41 @@ format = "json"
 ```toml
 [tls]
 handshake_timeout_seconds = 10
+versions = ["1.3", "1.2"]
 ```
 
-Certificates themselves are configured per site.
+Supported TLS versions in this Alpha are TLS 1.3 and TLS 1.2. HTTP/3 requires TLS 1.3. Certificates themselves are configured per site.
 
-### 5.5 Central security configuration
+### 5.5 HTTP/2 and HTTP/3
+
+HTTP/2 is enabled on the normal TCP/TLS listeners through Hyper:
+
+```toml
+[http2]
+enabled = true
+max_concurrent_streams = 100
+max_header_list_size = 32768
+```
+
+TLS listeners advertise `h2` and `http/1.1` through ALPN when HTTP/2 is enabled.
+
+HTTP/3 is experimental and feature-gated:
+
+```toml
+[http3]
+enabled = false
+max_request_body_bytes = 8388608
+```
+
+Build the experimental QUIC/H3 code with:
+
+```bash
+cargo build --release --features http3
+```
+
+In 0.4.7 Unstable the HTTP/3 transport can accept QUIC/H3 requests and pass their decoded request metadata through `refngn-parser` semantic validation, but the normal static/reverse-proxy routing pipeline is not yet connected to H3 streams. Valid H3 requests currently receive HTTP 501.
+
+### 5.6 Central security configuration
 
 Security is optional and loaded from a separate file:
 
@@ -359,7 +391,7 @@ trust_incoming = false
 
 When incoming IDs are not trusted, Refngn generates a new request ID and forwards it to the backend.
 
-## 15. Security engine (Pre Alpha)
+## 15. Security engine (Alpha)
 
 Attach a central security profile to a site:
 
@@ -367,6 +399,10 @@ Attach a central security profile to a site:
 [site.security]
 enabled = true
 profile = "default"
+
+[[site.security.route]]
+path_prefix = "/login"
+profile = "strict"
 ```
 
 Example `/etc/refngn/config/security.toml`:
@@ -399,13 +435,15 @@ initial_block_seconds = 30
 max_block_seconds = 3600
 ```
 
+The longest matching `[[site.security.route]]` path prefix overrides the site's default security profile. This makes it possible to use a stricter profile for `/login` or `/admin` while keeping normal browsing limits more generous.
+
 The rate limiter is currently a fixed-window per-IP/per-profile limiter. `burst` increases the allowed count within a window. Exceeding the rate limit returns HTTP 429 with `Retry-After`. Repeated rate-limit violations may create a temporary IP ban when blocking is enabled.
 
 Brute-force protection observes response status codes. After the configured number of failures within the window, the direct peer IP is temporarily blocked. Repeated blocks increase the penalty up to `max_block_seconds`. Refngn does not inspect credentials or authentication request bodies.
 
 `security.connections.max_per_ip` limits concurrent TCP connections per direct peer IP. Security counters and bans are in memory and reset when Refngn restarts or reloads into a new process.
 
-**Important:** this security layer is intended for HTTP/application-layer abuse. It cannot prevent volumetric DDoS traffic from saturating the machine or upstream network. When Refngn is placed behind a CDN or another reverse proxy, direct-peer IP limiting will see that proxy's IP in this Pre Alpha; trusted-proxy-aware client-IP handling is planned for a later build.
+**Important:** this security layer is intended for HTTP/application-layer abuse. It cannot prevent volumetric DDoS traffic from saturating the machine or upstream network. When Refngn is placed behind a CDN or another reverse proxy, direct-peer IP limiting will see that proxy's IP in this Alpha; trusted-proxy-aware client-IP handling is planned for a later build.
 
 ## 16. HTTP parser modes
 
@@ -416,9 +454,9 @@ mode = "hyper"
 
 Modes:
 
-- `hyper` — stable default; Hyper owns HTTP parsing.
-- `hyper-custom` — beta; Hyper remains active and `refngn-parser` performs additional request-head validation.
-- `custom` — experimental; custom validation is authoritative for supported request-head checks, while Hyper still provides transport/body/keep-alive support in this beta.
+- `hyper` — stable default; Hyper owns HTTP/1.1 and HTTP/2 parsing.
+- `hyper-custom` — experimental; HTTP/1 request heads are reconstructed and compared field-by-field (method, target, version, headers) against `refngn-parser`. HTTP/2 uses decoded semantic validation.
+- `custom` — experimental; Refngn validation is authoritative for supported request-head checks, while Hyper still provides the HTTP/1 + HTTP/2 transport/body/keep-alive layer. HTTP/3 uses the optional H3/QUIC transport and semantic validation.
 
 Diagnostics intentionally warn for experimental modes.
 
@@ -509,7 +547,7 @@ A structured multi-upstream can only be healthy on IPv6 if the backend applicati
 
 ### Address already in use on `[::]:80`
 
-0.4.7 Pre Alpha opens `listen.v6` sockets with `IPV6_V6ONLY`. With the new listener syntax, `0.0.0.0:80` and `[::]:80` are expected to coexist.
+0.4.7 Unstable opens `listen.v6` sockets with `IPV6_V6ONLY`. With the new listener syntax, `0.0.0.0:80` and `[::]:80` are expected to coexist.
 
 Check:
 
@@ -544,7 +582,7 @@ sudo journalctl -u refngn -n 100 --no-pager
 readlink -f /usr/bin/refngn
 ```
 
-## 20. Upgrade notes for 0.4.7 Pre Alpha
+## 20. Compatibility and upgrade notes for 0.4.7 Unstable
 
 The main listener syntax changed from flat blocks:
 
@@ -566,7 +604,7 @@ address = "::"
 port = 80
 ```
 
-Update the main configuration before starting this beta.
+Update the main configuration before starting this Alpha.
 
 For multi-backend proxy routes, prefer:
 
@@ -579,7 +617,7 @@ port = 8090
 
 The single URL form remains supported.
 
-Security is opt-in. Existing sites continue to run without `[site.security]`. To enable the Pre Alpha security engine, add `[security]` to the main config, install `security.toml`, and attach a profile to the desired sites.
+Security is opt-in. Existing sites continue to run without `[site.security]`. To enable the Alpha security engine, add `[security]` to the main config, install `security.toml`, and attach a profile to the desired sites.
 
 ## 21. Operational guidance
 
@@ -587,8 +625,22 @@ Security is opt-in. Existing sites continue to run without `[site.security]`. To
 - Run `refngn doctor --domain <name>` when introducing a new site or backend.
 - Keep private keys readable only by the service group.
 - Test both `curl -4` and `curl -6` for dual-stack deployments.
-- Treat beta parser modes as experimental until tested against your traffic.
+- Treat custom parser modes and HTTP/3 as experimental until tested against your traffic.
 - Start security profiles with generous limits, observe legitimate traffic, then tighten them.
-- Remember that security counters/bans reset across restart/reload in this Pre Alpha.
+- Remember that security counters/bans reset across restart/reload in this Alpha.
 - Keep upstream/provider DDoS protection for attacks that can saturate your network link.
 - Do not expose backend application ports publicly unless required.
+
+
+## Unstable release note
+
+0.4.7 Unstable is a dependency/build cleanup release on top of the Modular.2 source layout. Existing configuration syntax is intended to remain compatible. The default build uses AWS-LC as the single Rustls crypto provider; Reqwest is configured not to select a second provider; the direct `socket2` line is aligned to 0.6; and `x509-parser` is updated to the 0.18 line. HTTP/3 remains experimental and opt-in.
+
+After every release build, install the newly built binary before checking the version or restarting the service:
+
+```bash
+sudo systemctl stop refngn
+sudo install -Dm755 /etc/refngn/target/release/refngn /usr/bin/refngn
+/usr/bin/refngn --version
+sudo systemctl start refngn
+```

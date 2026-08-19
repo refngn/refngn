@@ -1,89 +1,53 @@
-# Refined Engine (`refngn`) 0.4.7 Pre Alpha
+# Refined Engine (`refngn`) 0.4.7 Unstable
 
-**Status: Pre Alpha / technology preview. Do not treat this build as production-ready.**
+**Status: Alpha / technology preview. Not production-ready.**
 
-NOT YET RELEASED, WORK IN Development!
+Refined Engine is a Linux-first HTTP/HTTPS server and reverse proxy written in Rust. It focuses on explicit configuration, dual-stack networking, TLS through rustls, diagnostics, application-layer security and an experimental custom HTTP request-head validator named `refngn-parser`.
 
-Refined Engine is a Linux-first HTTP/HTTPS server and reverse proxy written in Rust. It focuses on explicit configuration, predictable routing, TLS through rustls, diagnostics, and an experimental custom HTTP request-head parser named `refngn-parser`.
-
-For the complete installation, configuration, CLI, troubleshooting, and operational reference, read [`manual.md`](manual.md).
+For the complete installation, configuration, CLI, troubleshooting and operational reference, read [`manual.md`](manual.md).
 
 ## Highlights
 
-- Explicit IPv4 and IPv6 listener groups with independent sockets.
-- IPv6 listeners use `IPV6_V6ONLY`, allowing IPv4 and IPv6 to bind the same port safely.
-- HTTP and HTTPS listeners in one process.
-- Per-site SNI TLS certificates.
-- Per-site and listener-level HTTP-to-HTTPS redirects.
-- Canonical-domain redirects with path and query preservation.
-- Static file serving and reverse proxy routing.
-- Single or multi-backend proxy routes, including bracket-free IPv6 endpoint configuration.
-- Backend health checks, safe retries, streaming upstream responses, and WebSocket upgrades.
-- Per-site HTTP limits, security headers, and request IDs.
-- `hyper`, `hyper-custom`, and experimental `custom` parser modes.
-- `config test`, legacy `test`, `doctor`/`doktor`, `simulate`, certificate, and debug commands.
-- Central `security.toml` with reusable per-site security profiles.
-- Per-IP request rate limiting, connection limiting, temporary bans, and response-aware brute-force detection.
+- HTTP/1.1 and HTTP/2 on the normal TCP/TLS listeners.
+- TLS ALPN negotiation for `h2` and `http/1.1`.
+- Configurable TLS 1.3 / TLS 1.2 acceptance.
+- Experimental feature-gated HTTP/3/QUIC transport groundwork.
+- Explicit IPv4/IPv6 listeners with `IPV6_V6ONLY` for predictable dual-stack binding.
+- Per-site SNI certificates, redirects, static serving and reverse proxy routing.
+- Structured IPv4/IPv6 multi-upstreams, safe retries, health checks, streaming responses and WebSocket upgrades.
+- Central `security.toml`: request limiting, per-IP connection limits, temporary bans and response-aware brute-force detection.
+- Route-specific security profile overrides, for example a stricter `/login` profile.
+- `refngn-parser` HTTP/1 field-by-field differential comparison; HTTP/2/3 semantic validation.
+- `config test`, `test`, `doctor`/`doktor`, `simulate`, certificate and debug commands.
 
-## Dual-stack listeners
+## Protocol configuration
 
 ```toml
-[[listen.v4]]
-address = "0.0.0.0"
-port = 80
-tls = false
+[tls]
+handshake_timeout_seconds = 10
+versions = ["1.3", "1.2"]
 
-[[listen.v6]]
-address = "::"
-port = 80
-tls = false
+[http2]
+enabled = true
+max_concurrent_streams = 100
+max_header_list_size = 32768
 
-[[listen.v4]]
-address = "0.0.0.0"
-port = 443
-tls = true
-
-[[listen.v6]]
-address = "::"
-port = 443
-tls = true
+[http3]
+enabled = false
+max_request_body_bytes = 8388608
 ```
 
-`listen.v6` sockets are explicitly IPv6-only. This prevents `[::]:80` or `[::]:443` from also claiming the IPv4 port on Linux.
+HTTP/2 is part of the normal build. HTTP/3 is deliberately experimental and must be compiled with:
 
-## Single upstream
-
-```toml
-[[site.proxy]]
-path_prefix = "/"
-upstream = "http://127.0.0.1:8090"
+```bash
+cargo build --release --features http3
 ```
 
-## Multi-upstream with IPv4 and IPv6
+See [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md) before testing HTTP/3.
 
-```toml
-[[site.proxy]]
-path_prefix = "/"
-streaming = true
-websocket = true
+## Security profiles
 
-[[site.proxy.multi.upstream]]
-protocol = "http"
-address = "127.0.0.1"
-port = 8090
-
-[[site.proxy.multi.upstream]]
-protocol = "http"
-address = "::1"
-port = 8090
-```
-
-Do not put brackets around structured IPv6 addresses. Refngn converts `::1` to the internal URL form `[::1]` automatically.
-
-
-## Security profiles (Pre Alpha)
-
-Enable the central security policy in `refngn.toml`:
+Main config:
 
 ```toml
 [security]
@@ -91,15 +55,17 @@ enabled = true
 config = "/etc/refngn/config/security.toml"
 ```
 
-Attach a reusable profile to a site:
+Site config:
 
 ```toml
 [site.security]
 enabled = true
 profile = "default"
-```
 
-See [`config/security.toml`](config/security.toml) for the example policy. This layer is intended to reduce HTTP/application-layer abuse. It is not a replacement for provider/CDN/upstream protection against volumetric DDoS.
+[[site.security.route]]
+path_prefix = "/login"
+profile = "strict"
+```
 
 ## Build
 
@@ -107,17 +73,23 @@ See [`config/security.toml`](config/security.toml) for the example policy. This 
 cargo build --release
 ./target/release/refngn --version
 ./target/release/refngn config test
+./target/release/refngn test
+./target/release/refngn doctor
 ```
-
-`cargo fmt` is optional and requires the Rust `rustfmt` component.
 
 ## Documentation
 
-- [`manual.md`](manual.md) — complete operator and configuration manual.
-- [`docs/PROJECT_DOCUMENTATION.md`](docs/PROJECT_DOCUMENTATION.md) — architecture and project design.
-- [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md) — current Pre Alpha limitations.
+- [`manual.md`](manual.md) — operator/configuration manual.
+- [`config/sites-active/example.com.toml.example`](config/sites-active/example.com.toml.example) — current site example.
+- [`config/security.toml`](config/security.toml) — security policy example.
+- [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md) — current Alpha limitations.
 - [`CHANGELOG.md`](CHANGELOG.md) — release history.
 
 ## License
 
 MIT. See [`LICENSE-MIT`](LICENSE-MIT).
+
+
+## Unstable dependency cleanup
+
+0.4.7 Unstable keeps the Modular.2 configuration/runtime model while reducing dependency duplication. The default TLS stack is standardized on AWS-LC, Reqwest reuses that provider through its no-provider Rustls feature, the direct `socket2` dependency is aligned to 0.6, and `x509-parser` is moved to the 0.18 line. The modular `src/server/` and `src/config/` layout is retained. The next planned phase is 0.4.7 Beta, focused on stabilization, fuzzing, interoperability and load/security regression testing.
