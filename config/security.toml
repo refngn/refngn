@@ -1,0 +1,50 @@
+# Refined Engine 0.4.7 Alpha security policy.
+# This protects the HTTP/application layer. It cannot absorb a volumetric attack
+# that saturates the server's network connection before traffic reaches refngn.
+
+[security]
+default_profile = "default"
+
+[security.connections]
+max_per_ip = 50
+
+[security.profile.default.rate_limit]
+enabled = true
+requests = 120
+window_seconds = 60
+burst = 30
+
+[security.profile.default.blocking]
+enabled = true
+violation_threshold = 10
+window_seconds = 60
+ban_seconds = 900
+
+[security.profile.default.bruteforce]
+enabled = false
+failure_statuses = [401, 403]
+attempts = 5
+window_seconds = 300
+initial_block_seconds = 30
+max_block_seconds = 3600
+
+# A stricter profile suitable for login/authentication endpoints or sites.
+[security.profile.strict.rate_limit]
+enabled = true
+requests = 30
+window_seconds = 60
+burst = 5
+
+[security.profile.strict.blocking]
+enabled = true
+violation_threshold = 5
+window_seconds = 60
+ban_seconds = 900
+
+[security.profile.strict.bruteforce]
+enabled = true
+failure_statuses = [401, 403]
+attempts = 5
+window_seconds = 300
+initial_block_seconds = 30
+max_block_seconds = 3600
